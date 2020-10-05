@@ -6,6 +6,7 @@
 package kotlin.native.internal
 
 import kotlin.native.concurrent.*
+import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.StableRef
 import kotlinx.cinterop.asStableRef
 
@@ -94,37 +95,45 @@ private fun shutdownCleanerWorker(executeScheduledCleaners: Boolean) {
     CleanerWorker.worker.requestTermination(executeScheduledCleaners).result
 }
 
-@ExportTypeInfo("theCleanerImplTypeInfo")
-@HasFinalizer
-private class CleanerImpl<T>(
-    obj: T,
+private class CleanerPackage<T>(
+    private val objHolder: COpaquePointer,
     private val cleanObj: (T) -> Unit,
-): Cleaner {
+    private val worker: Worker,
+) {
 
-    init {
-        // Make sure that Cleaner Worker is initialized.
-        // TODO: Is it needed?
-        CleanerWorker.worker
-    }
-
-    private val objHolder = StableRef.create(obj as Any)
-
-    @ExportForCppRuntime("Kotlin_CleanerImpl_clean")
+    @ExportForCppRuntime("Kotlin_CleanerPackage_clean")
     private fun clean() {
         // It's externally guaranteed that this is called only if cleanerWorker was
         // not yet shut down.
         val cleanPackage = Pair(cleanObj, objHolder).freeze()
         // TODO: The future is leaking here.
-        CleanerWorker.worker.execute(TransferMode.SAFE, { cleanPackage }) { (cleanObj, objHolder) ->
+        worker.execute(TransferMode.SAFE, { cleanPackage }) { (cleanObj, objHolder) ->
+            val ref = objHolder.asStableRef<Any>()
             try {
                 // TODO: Maybe if this fails with exception, it should be (optionally) reported.
                 @Suppress("UNCHECKED_CAST")
-                cleanObj(objHolder.get() as T)
+                cleanObj(ref.get() as T)
             } finally {
-                objHolder.dispose()
+                ref.dispose()
             }
         }
     }
+
+}
+
+@NoReorderFields
+@ExportTypeInfo("theCleanerImplTypeInfo")
+@HasFinalizer
+private class CleanerImpl<T>(
+    obj: T,
+    cleanObj: (T) -> Unit,
+): Cleaner {
+
+    private val cleanerPackage = CleanerPackage(
+        StableRef.create(obj as Any).asCPointer(),
+        cleanObj,
+        CleanerWorker.worker,
+    ).freeze()
 }
 
 @SymbolName("Kotlin_Any_isShareable")

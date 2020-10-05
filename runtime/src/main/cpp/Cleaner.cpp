@@ -9,14 +9,19 @@
 #include "Runtime.h"
 
 // Defined in Cleaner.kt
-extern "C" void Kotlin_CleanerImpl_clean(KRef thiz);
+extern "C" void Kotlin_CleanerPackage_clean(KRef thiz);
 extern "C" void Kotlin_CleanerImpl_shutdownCleanerWorker(bool);
 
 namespace {
 
+struct CleanerImpl {
+  ObjHeader header;
+  KRef cleanerPackage;
+};
+
 bool cleanersDisabled = false;
 
-void disposeCleaner(KRef thiz) {
+void disposeCleaner(CleanerImpl* thiz) {
     if (atomicGet(&cleanersDisabled)) {
         if (Kotlin_cleanersLeakCheckerEnabled()) {
             konan::consoleErrorf(
@@ -28,17 +33,17 @@ void disposeCleaner(KRef thiz) {
         return;
     }
 
-    Kotlin_CleanerImpl_clean(thiz);
+    Kotlin_CleanerPackage_clean(thiz->cleanerPackage);
 }
 
 } // namespace
 
 RUNTIME_NOTHROW void DisposeCleaner(KRef thiz) {
 #if KONAN_NO_EXCEPTIONS
-    disposeCleaner(thiz);
+    disposeCleaner(reinterpret_cast<CleanerImpl*>(thiz));
 #else
     try {
-        disposeCleaner(thiz);
+        disposeCleaner(reinterpret_cast<CleanerImpl*>(thiz));
     } catch (...) {
         // A trick to terminate with unhandled exception. This will print a stack trace
         // and write to iOS crash log.
