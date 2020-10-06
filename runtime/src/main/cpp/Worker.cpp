@@ -68,7 +68,8 @@ enum JobKind {
   // Order is important in sense that all job kinds after this one is considered
   // processed for APIs returning request process status.
   JOB_REGULAR = 2,
-  JOB_EXECUTE_AFTER = 3
+  JOB_EXECUTE_AFTER = 3,
+  JOB_NO_FUTURE = 4,
 };
 
 enum class WorkerKind {
@@ -95,6 +96,11 @@ struct Job {
       KNativePtr operation;
       uint64_t whenExecute;
     } executeAfter;
+
+    struct {
+      void (*function)(KRef);
+      KNativePtr argument;
+    } noFutureJob;
   };
 };
 
@@ -333,6 +339,26 @@ class State {
     worker->putJob(job, toFront);
 
     return future;
+  }
+
+  bool addNoFutureJobToWorkerUnlocked(KInt id, void (*jobFunction)(KRef), KNativePtr jobArgument) {
+    Locker locker(&lock_);
+
+    auto it = workers_.find(id);
+    if (it == workers_.end()) {
+      return false;
+    }
+
+    auto* worker = it->second;
+
+    Job job;
+    job.kind = JOB_NO_FUTURE;
+    job.noFutureJob.function = jobFunction;
+    job.noFutureJob.argument = jobArgument;
+
+    worker->putJob(job, false);
+
+    return true;
   }
 
   bool executeJobAfterInWorkerUnlocked(KInt id, KRef operation, KLong afterMicroseconds) {
@@ -740,6 +766,15 @@ void WorkerResume(Worker* worker) {
 #endif  // WITH_WORKERS
 }
 
+void WorkerSchedule(KInt id, KRef jobArgument, void (*jobFunction)(KRef)) {
+#if WITH_WORKERS
+    RuntimeAssert(Kotlin_Any_isShareable(jobArgument), "jobArgument must be shareable");
+
+    void* argument = CreateStablePointer(jobArgument);
+    theState()->addNoFutureJobToWorkerUnlocked(id, jobFunction, argument);
+#endif  // WITH_WORKERS
+}
+
 #if WITH_WORKERS
 
 Worker::~Worker() {
@@ -749,6 +784,9 @@ Worker::~Worker() {
       case JOB_REGULAR:
         DisposeStablePointer(job.regularJob.argument);
         job.regularJob.future->cancelUnlocked();
+        break;
+      case JOB_NO_FUTURE:
+        DisposeStablePointer(job.noFutureJob.argument);
         break;
       case JOB_EXECUTE_AFTER: {
         // TODO: what do we do here? Shall we execute them?
@@ -957,6 +995,19 @@ JobKind Worker::processQueueElement(bool blocking) {
        // Notify the future.
        job.regularJob.future->storeResultUnlocked(result, ok);
        break;
+    }
+    case JOB_NO_FUTURE: {
+      KRef argument = AdoptStablePointer(job.noFutureJob.argument, argumentHolder.slot());
+      bool ok = true;
+      try {
+        job.noFutureJob.function(argument);
+        argumentHolder.clear();
+      } catch (ExceptionObjHolder& e) {
+        ok = false;
+        if (errorReporting())
+          ReportUnhandledException(e.obj());
+      }
+      break;
     }
     default: {
       RuntimeCheck(false, "Must be exhaustive");

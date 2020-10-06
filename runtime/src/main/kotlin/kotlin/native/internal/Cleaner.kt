@@ -138,14 +138,6 @@ private class CleanerImpl<T>(
     val worker = CleanerWorker.worker
 }
 
-@ExportForCppRuntime("Kotlin_CleanerImpl_scheduleClean")
-private fun scheduleClean(cleanerPackage: CleanerPackage, worker: Worker) {
-    // It's externally guaranteed that this is called only if cleanerWorker was
-    // not yet shut down.
-    // TODO: The future is leaking here.
-    worker.execute(TransferMode.SAFE, { cleanerPackage }, ::clean)
-}
-
 @SymbolName("Kotlin_Any_isShareable")
 external private fun Any?.isShareable(): Boolean
 

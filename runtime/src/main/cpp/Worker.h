@@ -14,6 +14,8 @@ void WorkerDeinit(Worker* worker);
 void WorkerDestroyThreadDataIfNeeded(KInt id);
 // Wait until all terminating native workers finish termination. Expected to be called once.
 void WaitNativeWorkersTermination();
+// Schedule the job and don't generate future for it. `jobArgument` must be shareable.
+void WorkerSchedule(KInt id, KRef jobArgument, void (*jobFunction)(KRef));
 
 Worker* WorkerSuspend();
 void WorkerResume(Worker* worker);

@@ -7,9 +7,10 @@
 
 #include "Memory.h"
 #include "Runtime.h"
+#include "Worker.h"
 
 // Defined in Cleaner.kt
-extern "C" void Kotlin_CleanerImpl_scheduleClean(KRef cleanerPackage, KInt worker);
+extern "C" void Kotlin_CleanerImpl_clean(KRef cleanerPackage);
 extern "C" void Kotlin_CleanerImpl_shutdownCleanerWorker(bool);
 
 namespace {
@@ -34,7 +35,7 @@ void disposeCleaner(CleanerImpl* thiz) {
         return;
     }
 
-    Kotlin_CleanerImpl_scheduleClean(thiz->cleanerPackage, thiz->worker);
+    WorkerSchedule(thiz->worker, thiz->cleanerPackage, Kotlin_CleanerImpl_clean);
 }
 
 } // namespace
