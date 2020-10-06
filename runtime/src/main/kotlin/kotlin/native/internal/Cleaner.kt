@@ -95,48 +95,13 @@ private fun shutdownCleanerWorker(executeScheduledCleaners: Boolean) {
     CleanerWorker.worker.requestTermination(executeScheduledCleaners).result
 }
 
-private interface CleanerPackage {
-    fun clean()
-}
-
-private class CleanerPackageImpl<T>(
-    private val objHolder: COpaquePointer,
-    private val cleanObj: (T) -> Unit,
-): CleanerPackage {
-
-    override fun clean() {
-        val ref = objHolder.asStableRef<Any>()
-        try {
-            // TODO: Maybe if this fails with exception, it should be (optionally) reported.
-            @Suppress("UNCHECKED_CAST")
-            cleanObj(ref.get() as T)
-        } finally {
-            ref.dispose()
-        }
-    }
-
-}
-
-@ExportForCppRuntime("Kotlin_CleanerImpl_clean")
-private fun clean(cleanerPackage: CleanerPackage) {
-    cleanerPackage.clean()
-}
-
 @NoReorderFields
 @ExportTypeInfo("theCleanerImplTypeInfo")
 @HasFinalizer
-private class CleanerImpl<T>(
-    obj: T,
-    cleanObj: (T) -> Unit,
-): Cleaner {
-
-    val cleanerPackage: CleanerPackage = CleanerPackageImpl(
-        StableRef.create(obj as Any).asCPointer(),
-        cleanObj,
-    ).freeze()
-
-    val worker = CleanerWorker.worker
-}
+private class CleanerImpl(
+    private val worker: Worker,
+    private val clean: () -> Unit,
+): Cleaner {}
 
 @SymbolName("Kotlin_Any_isShareable")
 external private fun Any?.isShareable(): Boolean
@@ -146,5 +111,17 @@ private fun <T> createCleanerImpl(argument: T, block: (T) -> Unit): Cleaner {
     if (!argument.isShareable())
         throw IllegalArgumentException("$argument must be shareable")
 
-    return CleanerImpl(argument, block.freeze())
+    val ref = StableRef.create(argument as Any)
+
+    val clean = {
+        try {
+            // TODO: Maybe if this fails with exception, it should be (optionally) reported.
+            @Suppress("UNCHECKED_CAST")
+            block(ref.get() as T)
+        } finally {
+            ref.dispose()
+        }
+    }.freeze()
+
+    return CleanerImpl(CleanerWorker.worker, clean)
 }

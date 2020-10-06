@@ -10,15 +10,14 @@
 #include "Worker.h"
 
 // Defined in Cleaner.kt
-extern "C" void Kotlin_CleanerImpl_clean(KRef cleanerPackage);
 extern "C" void Kotlin_CleanerImpl_shutdownCleanerWorker(bool);
 
 namespace {
 
 struct CleanerImpl {
   ObjHeader header;
-  KRef cleanerPackage;
   KInt worker;
+  KRef clean;
 };
 
 bool cleanersDisabled = false;
@@ -35,7 +34,7 @@ void disposeCleaner(CleanerImpl* thiz) {
         return;
     }
 
-    WorkerSchedule(thiz->worker, thiz->cleanerPackage, Kotlin_CleanerImpl_clean);
+    WorkerSchedule(thiz->worker, thiz->clean);
 }
 
 } // namespace
