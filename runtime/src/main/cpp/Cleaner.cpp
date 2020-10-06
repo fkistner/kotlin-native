@@ -9,7 +9,7 @@
 #include "Runtime.h"
 
 // Defined in Cleaner.kt
-extern "C" void Kotlin_CleanerPackage_clean(KRef thiz);
+extern "C" void Kotlin_CleanerImpl_scheduleClean(KRef cleanerPackage, KInt worker);
 extern "C" void Kotlin_CleanerImpl_shutdownCleanerWorker(bool);
 
 namespace {
@@ -17,6 +17,7 @@ namespace {
 struct CleanerImpl {
   ObjHeader header;
   KRef cleanerPackage;
+  KInt worker;
 };
 
 bool cleanersDisabled = false;
@@ -33,7 +34,7 @@ void disposeCleaner(CleanerImpl* thiz) {
         return;
     }
 
-    Kotlin_CleanerPackage_clean(thiz->cleanerPackage);
+    Kotlin_CleanerImpl_scheduleClean(thiz->cleanerPackage, thiz->worker);
 }
 
 } // namespace

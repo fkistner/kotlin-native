@@ -95,30 +95,31 @@ private fun shutdownCleanerWorker(executeScheduledCleaners: Boolean) {
     CleanerWorker.worker.requestTermination(executeScheduledCleaners).result
 }
 
-private class CleanerPackage<T>(
+private interface CleanerPackage {
+    fun clean()
+}
+
+private class CleanerPackageImpl<T>(
     private val objHolder: COpaquePointer,
     private val cleanObj: (T) -> Unit,
-    private val worker: Worker,
-) {
+): CleanerPackage {
 
-    @ExportForCppRuntime("Kotlin_CleanerPackage_clean")
-    private fun clean() {
-        // It's externally guaranteed that this is called only if cleanerWorker was
-        // not yet shut down.
-        val cleanPackage = Pair(cleanObj, objHolder).freeze()
-        // TODO: The future is leaking here.
-        worker.execute(TransferMode.SAFE, { cleanPackage }) { (cleanObj, objHolder) ->
-            val ref = objHolder.asStableRef<Any>()
-            try {
-                // TODO: Maybe if this fails with exception, it should be (optionally) reported.
-                @Suppress("UNCHECKED_CAST")
-                cleanObj(ref.get() as T)
-            } finally {
-                ref.dispose()
-            }
+    override fun clean() {
+        val ref = objHolder.asStableRef<Any>()
+        try {
+            // TODO: Maybe if this fails with exception, it should be (optionally) reported.
+            @Suppress("UNCHECKED_CAST")
+            cleanObj(ref.get() as T)
+        } finally {
+            ref.dispose()
         }
     }
 
+}
+
+@ExportForCppRuntime("Kotlin_CleanerImpl_clean")
+private fun clean(cleanerPackage: CleanerPackage) {
+    cleanerPackage.clean()
 }
 
 @NoReorderFields
@@ -129,11 +130,20 @@ private class CleanerImpl<T>(
     cleanObj: (T) -> Unit,
 ): Cleaner {
 
-    private val cleanerPackage = CleanerPackage(
+    val cleanerPackage: CleanerPackage = CleanerPackageImpl(
         StableRef.create(obj as Any).asCPointer(),
         cleanObj,
-        CleanerWorker.worker,
     ).freeze()
+
+    val worker = CleanerWorker.worker
+}
+
+@ExportForCppRuntime("Kotlin_CleanerImpl_scheduleClean")
+private fun scheduleClean(cleanerPackage: CleanerPackage, worker: Worker) {
+    // It's externally guaranteed that this is called only if cleanerWorker was
+    // not yet shut down.
+    // TODO: The future is leaking here.
+    worker.execute(TransferMode.SAFE, { cleanerPackage }, ::clean)
 }
 
 @SymbolName("Kotlin_Any_isShareable")
