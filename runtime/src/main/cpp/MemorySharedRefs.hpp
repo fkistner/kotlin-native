@@ -54,6 +54,8 @@ class BackRefFromAssociatedObject {
 
   void releaseRef();
 
+  void detach();
+
   // Error if called from the wrong worker with non-frozen obj_.
   template <ErrorPolicy errorPolicy>
   ObjHeader* ref() const;
