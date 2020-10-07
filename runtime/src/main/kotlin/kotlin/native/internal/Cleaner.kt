@@ -68,8 +68,6 @@ public interface Cleaner
  * @param block must not capture anything
  */
 // TODO: Consider just annotating the lambda argument rather than using intrinsic.
-// TODO: Test on a block being lambda, anonymous function, function reference.
-// TODO: Test on concurrently creating and destroying many cleaners.
 @ExperimentalStdlibApi
 @TypedIntrinsic(IntrinsicType.CREATE_CLEANER)
 external fun <T> createCleaner(argument: T, block: (T) -> Unit): Cleaner

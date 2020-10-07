@@ -32,7 +32,7 @@ class FunBox(private val impl: () -> Unit) {
 }
 
 @Test
-fun testCleaner() {
+fun testCleanerLambda() {
     val called = AtomicBoolean(false);
     var funBoxWeak: WeakReference<FunBox>? = null
     var cleanerWeak: WeakReference<Cleaner>? = null
@@ -56,6 +56,62 @@ fun testCleaner() {
 }
 
 @Test
+fun testCleanerAnonymousFunction() {
+    val called = AtomicBoolean(false);
+    var funBoxWeak: WeakReference<FunBox>? = null
+    var cleanerWeak: WeakReference<Cleaner>? = null
+    {
+        val cleaner = {
+            val funBox = FunBox { called.value = true }.freeze()
+            funBoxWeak = WeakReference(funBox)
+            createCleaner(funBox, fun (it: FunBox) { it.call() })
+        }()
+        GC.collect()  // Make sure local funBox reference is gone
+        cleanerWeak = WeakReference(cleaner)
+        assertFalse(called.value)
+    }()
+
+    GC.collect()
+    performGCOnCleanerWorker()
+
+    assertNull(cleanerWeak!!.value)
+    assertTrue(called.value)
+    assertNull(funBoxWeak!!.value)
+}
+
+@Test
+fun testCleanerFunctionReference() {
+    val called = AtomicBoolean(false);
+    var funBoxWeak: WeakReference<FunBox>? = null
+    var cleanerWeak: WeakReference<Cleaner>? = null
+    {
+        val cleaner = {
+            val funBox = FunBox { called.value = true }.freeze()
+            funBoxWeak = WeakReference(funBox)
+            createCleaner(funBox, FunBox::call)
+        }()
+        GC.collect()  // Make sure local funBox reference is gone
+        cleanerWeak = WeakReference(cleaner)
+        assertFalse(called.value)
+    }()
+
+    GC.collect()
+    performGCOnCleanerWorker()
+
+    assertNull(cleanerWeak!!.value)
+    assertTrue(called.value)
+    assertNull(funBoxWeak!!.value)
+}
+
+@Test
+fun testCleanerFailWithNonShareableArgument() {
+    val funBox = FunBox {}
+    assertFailsWith<IllegalArgumentException> {
+        createCleaner(funBox) {}
+    }
+}
+
+@Test
 fun testCleanerFrozen() {
     val called = AtomicBoolean(false);
     var funBoxWeak: WeakReference<FunBox>? = null
@@ -67,8 +123,8 @@ fun testCleanerFrozen() {
             createCleaner(funBox) { it.call() }
         }()
         GC.collect()  // Make sure local funBox reference is gone
-        cleaner.freeze()
         cleanerWeak = WeakReference(cleaner)
+        cleaner.freeze()
         assertFalse(called.value)
     }()
 
