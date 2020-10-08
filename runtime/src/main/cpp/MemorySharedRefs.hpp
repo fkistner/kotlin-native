@@ -61,7 +61,7 @@ class BackRefFromAssociatedObject {
   ObjHeader* ref() const;
 
  private:
-  ObjHeader* obj_;
+  ObjHeader* obj_; // May be null before [initAndAddRef] or after [detach].
   ForeignRefContext context_;
   volatile int refCount;
 };
